@@ -1,56 +1,60 @@
-import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { SplashScreen, Stack } from 'expo-router';
-import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import React, { useEffect } from "react";
+import * as SecureStore from "expo-secure-store";
+import { ClerkProvider, useAuth } from "@clerk/clerk-expo";
+import { Slot, useRouter, useSegments } from "expo-router";
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
+const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
-export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
-  initialRouteName: '(tabs)',
+const tokenCache = {
+  async getToken(key: string) {
+    try {
+      return SecureStore.getItemAsync(key);
+    } catch (error) {
+      return null;
+    }
+  },
+  async saveToken(key: string, value: string) {
+    try {
+      return SecureStore.setItemAsync(key, value);
+    } catch (error) {
+      return;
+    }
+  },
 };
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
+const InitialLayout = () => {
+  const { isLoaded, isSignedIn } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
 
-export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-    ...FontAwesome.font,
-  });
-
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
+  // Watch user status to redirect
   useEffect(() => {
-    if (error) throw error;
-  }, [error]);
+    if (!isLoaded) return;
 
-  useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
+    // No need to redirect again if in auth section
+    const inTabsGroup = segments[0] === "(auth)";
+
+    if (isSignedIn && !inTabsGroup) {
+      router.replace("/home");
+    } else if (!isSignedIn) {
+      router.replace("/login");
     }
-  }, [loaded]);
+  }, [isSignedIn]);
 
-  if (!loaded) {
-    return null;
-  }
+  // Slot will render the current child route, think of this like the children prop in React.
+  // This component can be wrapped with other components to create a layout.
+  return <Slot />;
+};
 
-  return <RootLayoutNav />;
-}
-
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
-
+const RootLayoutNav = () => {
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-      </Stack>
-    </ThemeProvider>
+    <ClerkProvider
+      publishableKey={CLERK_PUBLISHABLE_KEY!}
+      tokenCache={tokenCache}
+    >
+      <InitialLayout />
+    </ClerkProvider>
   );
-}
+};
+
+export default RootLayoutNav;
